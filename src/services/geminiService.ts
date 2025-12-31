@@ -14,7 +14,7 @@ export const transcribeAndTranslate = async (
     1. Identify distinct speech segments.
     2. Transcribe the spoken text (detect language automatically).
     3. Translate the text into Brazilian Portuguese (pt-br).
-    4. Ensure the translation is concise and fits the time window.
+    4. Ensure the translation is concise.
     5. Return a JSON array.
   `;
 
@@ -50,7 +50,8 @@ export const transcribeAndTranslate = async (
 
     return rawSegments.map((s: any, index: number) => {
       const duration = s.end - s.start;
-      const targetCharCount = Math.floor(duration * DEFAULT_TARGET_CHARS_PER_SEC);
+      // 16 chars/s é uma boa média para PT-BR
+      const targetCharCount = Math.floor(duration * 16);
       
       return {
         id: index,
@@ -75,24 +76,29 @@ export const refineIsochronicText = async (
 ): Promise<Segment[]> => {
   const ai = new GoogleGenAI({ apiKey });
   
-  const segmentsToRefine = segments.map(s => ({ 
-    id: s.id, 
-    translatedText: s.translatedText, 
-    duration: s.end - s.start,
-    targetCharCount: s.targetCharCount 
-  }));
+  // Prepara os dados com limites explícitos para a IA
+  const segmentsToRefine = segments.map(s => {
+    const duration = s.end - s.start;
+    const ideal = Math.floor(duration * 16); // 16 chars por segundo
+    return { 
+      id: s.id, 
+      currentText: s.translatedText, 
+      duration: duration.toFixed(1) + "s",
+      minChars: Math.max(5, ideal - 6), // Tolerância de -6
+      maxChars: ideal + 6               // Tolerância de +6 (Total 12 variação)
+    };
+  });
 
   const prompt = `
-    You are a highly skilled professional Dubbing Script Adapter.
-    Your task is to precisely rewrite the 'translatedText' for each segment to achieve "isochronic" dubbing.
-    This means the rewritten text MUST fit the 'duration' of the segment when spoken, without rushing or dragging.
-    The 'targetCharCount' provides an ideal length (approximately 16 characters per second).
-    Adjust the text to be slightly longer or shorter as needed to meet the target duration.
-    DO NOT change the core meaning or introduce new information. Focus on conciseness and flow.
+    You are a Dubbing Script Adapter. Your GOAL is to rewrite the Portuguese text to fit exactly into the time slot.
     
-    Return a JSON array with 'id' and 'refinedText' for each segment.
-
-    Input JSON Segments:
+    STRICT RULES:
+    1. The 'refinedText' character count MUST be between 'minChars' and 'maxChars'.
+    2. Maintain the original meaning but change words/phrasing to meet the length constraints.
+    3. If the text is too long, summarize or remove filler words.
+    4. If the text is too short, add natural filler words or be more descriptive.
+    
+    Input Data:
     ${JSON.stringify(segmentsToRefine)}
   `;
 
@@ -117,14 +123,14 @@ export const refineIsochronicText = async (
 
     const updates = JSON.parse(response.text || "[]");
     
-    // Merge updates
     return segments.map(seg => {
       const update = updates.find((u: any) => u.id === seg.id);
       return update ? { ...seg, translatedText: update.refinedText } : seg;
     });
 
   } catch (e) {
-    console.warn("Isochronic refinement failed, returning original segments.", e);
+    console.warn("Refinement failed, returning original.", e);
     return segments;
   }
 };
+
