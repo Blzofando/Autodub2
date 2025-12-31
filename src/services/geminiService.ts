@@ -1,6 +1,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Segment, SegmentStatus } from "../types";
-import { GEMINI_MODEL_ID, DEFAULT_TARGET_CHARS_PER_SEC } from "../constants";
+import { GEMINI_MODEL_ID } from "../constants";
+
+// REDUZIDO DE 16 PARA 12 PARA EVITAR VOZ ACELERADA
+const SAFE_CHARS_PER_SEC = 12; 
 
 export const transcribeAndTranslate = async (
   apiKey: string,
@@ -12,9 +15,9 @@ export const transcribeAndTranslate = async (
   const prompt = `
     Analyze this audio file. 
     1. Identify distinct speech segments.
-    2. Transcribe the spoken text (detect language automatically).
-    3. Translate the text into Brazilian Portuguese (pt-br).
-    4. Ensure the translation is concise.
+    2. Transcribe the spoken text.
+    3. Translate to Brazilian Portuguese (pt-br).
+    4. CRITICAL: The translation MUST be extremely concise to fit fast-paced dialogue.
     5. Return a JSON array.
   `;
 
@@ -34,10 +37,10 @@ export const transcribeAndTranslate = async (
           items: {
             type: Type.OBJECT,
             properties: {
-              start: { type: Type.NUMBER, description: "Start time in seconds" },
-              end: { type: Type.NUMBER, description: "End time in seconds" },
-              originalText: { type: Type.STRING, description: "Original transcription" },
-              translatedText: { type: Type.STRING, description: "Portuguese translation" },
+              start: { type: Type.NUMBER },
+              end: { type: Type.NUMBER },
+              originalText: { type: Type.STRING },
+              translatedText: { type: Type.STRING },
             },
             required: ["start", "end", "originalText", "translatedText"],
           },
@@ -50,8 +53,7 @@ export const transcribeAndTranslate = async (
 
     return rawSegments.map((s: any, index: number) => {
       const duration = s.end - s.start;
-      // 16 chars/s é uma boa média para PT-BR
-      const targetCharCount = Math.floor(duration * 16);
+      const targetCharCount = Math.floor(duration * SAFE_CHARS_PER_SEC);
       
       return {
         id: index,
@@ -59,13 +61,13 @@ export const transcribeAndTranslate = async (
         end: s.end,
         originalText: s.originalText,
         translatedText: s.translatedText,
-        targetCharCount,
+        targetCharCount, // Meta mais rigorosa
         status: SegmentStatus.Idle,
       };
     });
 
   } catch (error) {
-    console.error("Gemini Transcription Error:", error);
+    console.error("Gemini Error:", error);
     throw new Error("Failed to transcribe audio.");
   }
 };
@@ -76,29 +78,27 @@ export const refineIsochronicText = async (
 ): Promise<Segment[]> => {
   const ai = new GoogleGenAI({ apiKey });
   
-  // Prepara os dados com limites explícitos para a IA
   const segmentsToRefine = segments.map(s => {
     const duration = s.end - s.start;
-    const ideal = Math.floor(duration * 16); // 16 chars por segundo
+    // Força a IA a ser breve
+    const ideal = Math.floor(duration * SAFE_CHARS_PER_SEC); 
     return { 
       id: s.id, 
       currentText: s.translatedText, 
-      duration: duration.toFixed(1) + "s",
-      minChars: Math.max(5, ideal - 6), // Tolerância de -6
-      maxChars: ideal + 6               // Tolerância de +6 (Total 12 variação)
+      duration: duration.toFixed(2) + "s",
+      maxChars: ideal // Limite máximo estrito
     };
   });
 
   const prompt = `
-    You are a Dubbing Script Adapter. Your GOAL is to rewrite the Portuguese text to fit exactly into the time slot.
+    You are a Dubbing Adapter. Resize the Portuguese text to fit the duration.
     
-    STRICT RULES:
-    1. The 'refinedText' character count MUST be between 'minChars' and 'maxChars'.
-    2. Maintain the original meaning but change words/phrasing to meet the length constraints.
-    3. If the text is too long, summarize or remove filler words.
-    4. If the text is too short, add natural filler words or be more descriptive.
+    STRICT CONSTRAINT: 
+    The 'refinedText' length MUST be equal or less than 'maxChars'.
+    It is better to have a shorter sentence than a long one that requires speeding up the audio.
+    Remove adjectives, adverbs, and filler words if necessary. Keep only the core meaning.
     
-    Input Data:
+    Input:
     ${JSON.stringify(segmentsToRefine)}
   `;
 
@@ -129,8 +129,6 @@ export const refineIsochronicText = async (
     });
 
   } catch (e) {
-    console.warn("Refinement failed, returning original.", e);
     return segments;
   }
 };
-
