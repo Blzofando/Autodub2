@@ -1,9 +1,6 @@
-import { GoogleGenAI, SchemaType } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { Segment, SegmentStatus } from "../types";
 import { GEMINI_MODEL_ID, DEFAULT_TARGET_CHARS_PER_SEC } from "../constants";
-
-// Ajuste para usar SchemaType do SDK se Type não estiver disponível
-const Type = SchemaType;
 
 export const transcribeAndTranslate = async (
   apiKey: string,
@@ -82,7 +79,7 @@ export const refineIsochronicText = async (
     id: s.id, 
     translatedText: s.translatedText, 
     duration: s.end - s.start,
-    targetCharCount: s.targetCharCount // Pass the target for more precise control
+    targetCharCount: s.targetCharCount 
   }));
 
   const prompt = `
@@ -128,7 +125,6 @@ export const refineIsochronicText = async (
 
   } catch (e) {
     console.warn("Isochronic refinement failed, returning original segments.", e);
-    // Optionally, could log which segments failed to refine or apply a 'partially refined' status
     return segments;
   }
 };
