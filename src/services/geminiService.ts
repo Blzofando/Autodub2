@@ -17,8 +17,9 @@ export const transcribeAndTranslate = async (
     1. Identify distinct speech segments.
     2. Transcribe the spoken text.
     3. Translate to Brazilian Portuguese (pt-br).
-    4. CRITICAL: The translation MUST be extremely concise to fit fast-paced dialogue.
-    5. Return a JSON array.
+    4. The translation must contain the approximate number of characters of the original version, with a maximum variation of 12 characters. Adapt to make sense to the context of the block and general
+    5. CRITICAL: The translation MUST be extremely concise to fit fast-paced dialogue.
+    6. Return a JSON array.
   `;
 
   try {
