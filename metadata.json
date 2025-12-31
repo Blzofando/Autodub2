@@ -1,0 +1,5 @@
+{
+  "name": "AutoDub Pro",
+  "description": "Professional AI Dubbing Studio using Gemini 2.5 and OpenAI TTS with precise time-stretching and synchronization.",
+  "requestFramePermissions": []
+}
